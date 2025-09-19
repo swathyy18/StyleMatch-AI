@@ -1,0 +1,32 @@
+# Django
+*.pyc
+__pycache__/
+db.sqlite3
+migrations/
+
+# Virtual Environment
+venv/
+.env
+.env.local
+
+# Environment variables
+.env
+
+# Ollama models (can be large)
+.ollama/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Media files (user-uploaded content)
+media/
