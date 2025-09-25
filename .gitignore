@@ -30,3 +30,7 @@ Thumbs.db
 
 # Media files (user-uploaded content)
 media/
+
+# Databases
+*.sqlite3
+*.db

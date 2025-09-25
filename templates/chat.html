@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>StyleMatch Chatbot</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .chat-container { 
+            background: white;
+            border: 1px solid #ddd; 
+            padding: 30px; 
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .input-group { 
+            margin: 20px 0; 
+        }
+        label { 
+            display: block; 
+            margin-bottom: 8px; 
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], textarea { 
+            width: 100%; 
+            padding: 12px; 
+            margin: 5px 0; 
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px dashed #ccc;
+            border-radius: 5px;
+            background: #fafafa;
+            width: 100%;
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 12px 30px; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            font-size: 16px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .response { 
+            background: #f8f9fa; 
+            padding: 20px; 
+            border-radius: 5px; 
+            margin: 20px 0; 
+            border-left: 4px solid #007bff;
+        }
+        .hidden {
+            display: none;
+        }
+        .loading {
+            color: #666;
+            text-align: center;
+            padding: 20px;
+        }
+        .error {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .success {
+            background: #d1edff;
+            border-left-color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <h1>🎨 StyleMatch Fashion Assistant</h1>
+        
+        <form id="chatForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            
+            <div class="input-group">
+                <label for="text_input">Describe what you're looking for:</label>
+                <textarea id="text_input" name="text" rows="3" placeholder="e.g., 'outfit recommendations for a job interview' or 'how to style black jeans'"></textarea>
+            </div>
+            
+            <div class="input-group">
+                <label for="image_input">Or upload an image of your clothing item (optional):</label>
+                <input type="file" id="image_input" name="image" accept="image/*">
+                <small style="color: #666;">Supported formats: JPG, PNG, JPEG</small>
+            </div>
+            
+            <button type="submit" id="submitBtn">Get Fashion Recommendations 👗</button>
+        </form>
+        
+        <div id="loading" class="loading hidden">
+            <p>🔄 Analyzing your request and generating recommendations...</p>
+        </div>
+        
+        <div id="response" class="response hidden">
+            <h3>💡 Recommendation:</h3>
+            <div id="recommendationContent"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('chatForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const textInput = document.getElementById('text_input').value;
+            const imageInput = document.getElementById('image_input').files[0];
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingDiv = document.getElementById('loading');
+            const responseDiv = document.getElementById('response');
+            
+            // Validate input
+            if (!textInput && !imageInput) {
+                showError('Please provide either text description or an image');
+                return;
+            }
+            
+            if (textInput) formData.append('text', textInput);
+            if (imageInput) formData.append('image', imageInput);
+            
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            formData.append('csrfmiddlewaretoken', csrfToken);
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            loadingDiv.classList.remove('hidden');
+            responseDiv.classList.add('hidden');
+            
+            try {
+                const response = await fetch("/api/chatbot/recommend/", {
+                    method: "POST",
+                    body: formData,
+                });
+                
+                // First check the response status
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status} ${response.statusText}`);
+                }
+                
+                // Check if response is JSON
+                const contentType = response.headers.get('content-type');
+                let data;
+                
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    // If not JSON, get the text to see what's wrong
+                    const text = await response.text();
+                    console.error('Non-JSON response:', text.substring(0, 500));
+                    
+                    // Check if it's an HTML error page
+                    if (text.trim().startsWith('<!DOCTYPE') || text.includes('<html')) {
+                        throw new Error('Server returned an HTML page instead of JSON. Check if the URL is correct.');
+                    } else {
+                        throw new Error(`Unexpected response format: ${text.substring(0, 100)}...`);
+                    }
+                }
+                
+                // Display successful response
+                showSuccess(data);
+                
+            } catch (error) {
+                console.error('Full error details:', error);
+                showError(`Request failed: ${error.message}`);
+            } finally {
+                // Reset button and hide loading
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Get Fashion Recommendations 👗';
+                loadingDiv.classList.add('hidden');
+            }
+        });
+        
+        function showSuccess(data) {
+            const contentDiv = document.getElementById('recommendationContent');
+            const responseDiv = document.getElementById('response');
+            
+            contentDiv.innerHTML = formatResponse(data);
+            responseDiv.className = 'response success';
+            responseDiv.classList.remove('hidden');
+            
+            // Scroll to response
+            responseDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        function showError(message) {
+            const contentDiv = document.getElementById('recommendationContent');
+            const responseDiv = document.getElementById('response');
+            
+            contentDiv.innerHTML = `<p><strong>Error:</strong> ${message}</p>
+                                  <p><small>Check the browser console (F12) for detailed error information.</small></p>`;
+            responseDiv.className = 'response error';
+            responseDiv.classList.remove('hidden');
+            
+            // Scroll to error
+            responseDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        function formatResponse(data) {
+            let html = '';
+            
+            if (data.identified_item) {
+                html += `<div class="response-section">
+                        <h4>🔍 Identified Item:</h4>
+                        <p>${data.identified_item}</p>
+                    </div>`;
+            }
+            
+            if (data.user_request) {
+                html += `<div class="response-section">
+                        <h4>💬 Your Request:</h4>
+                        <p>${data.user_request}</p>
+                    </div>`;
+            }
+            
+            if (data.recommendation) {
+                // Convert line breaks to HTML and preserve formatting
+                const formattedRec = data.recommendation
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/- (.*?)(<br>|$)/g, '• $1<br>');
+                
+                html += `<div class="response-section">
+                        <h4>🎯 Fashion Recommendations:</h4>
+                        <div style="white-space: pre-line; line-height: 1.6;">${formattedRec}</div>
+                    </div>`;
+            } else if (data.error) {
+                html += `<div class="response-section error">
+                        <h4>❌ Error:</h4>
+                        <p>${data.error}</p>
+                    </div>`;
+            } else {
+                html += `<p>No recommendation content received.</p>`;
+            }
+            
+            return html;
+        }
+        
+        // Add some helpful tips
+        console.log("💡 Tip: You can ask for outfit recommendations or upload clothing images for styling advice!");
+    </script>
+</body>
+</html>
