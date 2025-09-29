@@ -118,7 +118,6 @@ class OutfitRecommendationView(APIView):
             if similarity > best_similarity:
                 best_similarity = similarity
                 best_item = item
-        
         return best_item
     
     def get_llm_recommendation(self, prompt, context_type="text"):
