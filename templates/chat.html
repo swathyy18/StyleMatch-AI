@@ -242,6 +242,18 @@
                         <p>${data.user_request}</p>
                     </div>`;
             }
+            if (data.shopping_links) {
+        // Format shopping links with clickable URLs
+        const formattedLinks = data.shopping_links
+            .replace(/\n/g, '<br>')
+            .replace(/(https?:\/\/[^\s]+)/g, 
+                '<a href="$1" target="_blank" style="color: #007bff; text-decoration: none;">$1</a>'
+            );
+        html += `<div class="response-section">
+                <h4>🛍️ Shopping Links:</h4>
+                <div style="white-space: pre-line; line-height: 1.6;">${formattedLinks}</div>
+            </div>`;
+    }
             
             if (data.recommendation) {
                 // Convert line breaks to HTML and preserve formatting

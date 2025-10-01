@@ -45,6 +45,15 @@ class OutfitRecommendationView(APIView):
             # Step 1: Use CLIP to identify the image
             image_description = self.identify_image_with_clip(image_file)
             
+            # NEW: Check if user is asking for shopping links
+            if self.is_shopping_request(user_text):
+                shopping_links = self.get_shopping_links(user_text, image_description)
+                return Response({
+                    "identified_item": image_description,
+                    "user_request": user_text,
+                    "shopping_links": shopping_links
+                })
+            
             # Step 2: Combine image info with user's text for LLM
             llm_prompt = f"Item: {image_description}. User request: '{user_text}'"
             
@@ -76,6 +85,16 @@ class OutfitRecommendationView(APIView):
     
     def handle_text_only(self, user_text):
         """User sends only text"""
+        print(f"DEBUG: User text: '{user_text}'")
+        print(f"DEBUG: Is shopping request: {self.is_shopping_request(user_text)}")
+        # NEW: Check if user is asking for shopping links
+        if self.is_shopping_request(user_text):
+            shopping_links = self.get_shopping_links(user_text)
+            return Response({
+                "user_request": user_text,
+                "shopping_links": shopping_links
+            })
+        
         recommendation = self.get_llm_recommendation(user_text, "text")
         return Response({"recommendation": recommendation})
     
@@ -119,6 +138,89 @@ class OutfitRecommendationView(APIView):
                 best_similarity = similarity
                 best_item = item
         return best_item
+    
+    # NEW METHOD: Check if user is asking for shopping links
+   # In your views.py, update the is_shopping_request method:
+
+    def is_shopping_request(self, user_text):
+        """Check if the user is asking for shopping links"""
+        if not user_text:
+            return False
+        
+        shopping_keywords = [
+        'buy', 'purchase', 'shop', 'where to buy', 'where can i buy', 'get this',
+        'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'meesho',
+        'link', 'links', 'shopping', 'online', 'website', 'store',
+        'shopping links', 'buy this', 'purchase this', 'shop for',
+        'shopping sites', 'ecommerce', 'online store'
+         ]
+    
+        user_text_lower = user_text.lower()
+    
+        # Check for exact matches and partial matches
+        for keyword in shopping_keywords:
+            if keyword in user_text_lower:
+                return True
+    
+        return False
+    
+    # NEW METHOD: Generate shopping links
+    def get_shopping_links(self, prompt, image_description=None):
+        """Generate shopping links based on user request"""
+        try:
+            # If we have an image description from CLIP, use that directly
+            if image_description:
+                product_query = image_description.replace(' ', '+')
+                display_name = image_description
+            else:
+                # For text-only requests, extract from prompt
+                product_info = self.extract_product_info(prompt)
+                product_query = product_info.get('product_type', 'clothing').replace(' ', '+')
+                display_name = product_query.replace('+', ' ')
+            
+            # Generate search links for different platforms
+            links = {
+                "amazon": f"https://www.amazon.in/s?k={product_query}",
+                "flipkart": f"https://www.flipkart.com/search?q={product_query}",
+                "myntra": f"https://www.myntra.com/{product_query.replace('+', '-')}",
+                "ajio": f"https://www.ajio.com/search/?text={product_query}",
+                "nykaa_fashion": f"https://www.nykaafashion.com/search/result?q={product_query}"
+            }
+            
+            response = f"🛍️ **Shopping Links for '{display_name}':**\n\n"
+            
+            for platform, link in links.items():
+                platform_name = platform.replace('_', ' ').title()
+                response += f"• **{platform_name}**: {link}\n"
+            
+            response += "\n💡 *Click the links to browse available options!*"
+            
+            return response
+            
+        except Exception as e:
+            return "I can help you find shopping links! Try asking like: 'Amazon links for white tops' or 'Where to buy blue jeans'"
+    
+    # NEW METHOD: Extract product information from user prompt (for text-only requests)
+    def extract_product_info(self, prompt):
+        """Extract product details from user request (for text-only shopping)"""
+        # Simple keyword-based extraction for text-only requests
+        colors = ['white', 'black', 'blue', 'red', 'green', 'yellow', 'pink', 'purple', 'orange', 'brown', 'gray']
+        clothing_types = ['top', 'dress', 'jeans', 'shirt', 'skirt', 'shoes', 'saree', 'kurta', 'jacket', 'pants', 'trousers']
+        
+        prompt_lower = prompt.lower()
+        
+        # Find color and clothing type
+        found_color = next((color for color in colors if color in prompt_lower), '')
+        found_item = next((item for item in clothing_types if item in prompt_lower), 'clothing')
+        
+        product_type = f"{found_color} {found_item}".strip() if found_color else found_item
+        
+        return {
+            "product_type": product_type,
+            "color": found_color,
+            "occasion": "casual",  # Default
+            "retailers": ["amazon", "flipkart", "myntra"]
+        }
     
     def get_llm_recommendation(self, prompt, context_type="text"):
         """Get fashion recommendations with context-aware prompts"""
