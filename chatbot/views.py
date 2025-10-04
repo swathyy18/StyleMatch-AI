@@ -168,39 +168,60 @@ class OutfitRecommendationView(APIView):
     def get_shopping_links(self, prompt, image_description=None):
         """Generate shopping links based on user request"""
         try:
-            # If we have an image description from CLIP, use that directly
+        # If we have an image description from CLIP, use that directly
             if image_description:
                 product_query = image_description.replace(' ', '+')
                 display_name = image_description
             else:
-                # For text-only requests, extract from prompt
-                product_info = self.extract_product_info(prompt)
-                product_query = product_info.get('product_type', 'clothing').replace(' ', '+')
+            # For text-only requests, use CLIP to understand the query better
+            # This will give us a more accurate product description
+                product_query = self.understand_text_query(prompt)
                 display_name = product_query.replace('+', ' ')
-            
-            # Generate search links for different platforms
+        
+        # Generate search links for different platforms
             links = {
-                "amazon": f"https://www.amazon.in/s?k={product_query}",
-                "flipkart": f"https://www.flipkart.com/search?q={product_query}",
-                "myntra": f"https://www.myntra.com/{product_query.replace('+', '-')}",
-                "ajio": f"https://www.ajio.com/search/?text={product_query}",
-                "nykaa_fashion": f"https://www.nykaafashion.com/search/result?q={product_query}"
+            "amazon": f"https://www.amazon.in/s?k={product_query}",
+            "flipkart": f"https://www.flipkart.com/search?q={product_query}",
+            "myntra": f"https://www.myntra.com/{product_query.replace('+', '-')}",
+            "ajio": f"https://www.ajio.com/search/?text={product_query}",
+            "nykaa_fashion": f"https://www.nykaafashion.com/search/result?q={product_query}"
             }
-            
+        
             response = f"🛍️ **Shopping Links for '{display_name}':**\n\n"
-            
+        
             for platform, link in links.items():
                 platform_name = platform.replace('_', ' ').title()
                 response += f"• **{platform_name}**: {link}\n"
-            
+        
             response += "\n💡 *Click the links to browse available options!*"
-            
+        
             return response
-            
+        
         except Exception as e:
             return "I can help you find shopping links! Try asking like: 'Amazon links for white tops' or 'Where to buy blue jeans'"
+
+    def understand_text_query(self, prompt):
+        """Use CLIP to better understand text shopping queries"""
+        try:
+        # Get embedding for the user's text query
+            query_embedding = encode_text(prompt)
+        
+        # Find the closest matching item in database to understand what they mean
+            closest_item = self.find_closest_item(query_embedding)
+        
+            if closest_item:
+            # Use the database item's description for more accurate search
+                return closest_item.description.replace(' ', '+')
+            else:
+            # Fallback to keyword extraction
+                product_info = self.extract_product_info(prompt)
+                return product_info.get('product_type', 'clothing').replace(' ', '+')
+            
+        except Exception as e:
+        # Fallback if CLIP fails
+            product_info = self.extract_product_info(prompt)
+            return product_info.get('product_type', 'clothing').replace(' ', '+')
     
-    # NEW METHOD: Extract product information from user prompt (for text-only requests)
     def extract_product_info(self, prompt):
         """Extract product details from user request (for text-only shopping)"""
         # Simple keyword-based extraction for text-only requests
