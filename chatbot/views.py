@@ -183,7 +183,6 @@ class OutfitRecommendationView(APIView):
             "amazon": f"https://www.amazon.in/s?k={product_query}",
             "flipkart": f"https://www.flipkart.com/search?q={product_query}",
             "myntra": f"https://www.myntra.com/{product_query.replace('+', '-')}",
-            "ajio": f"https://www.ajio.com/search/?text={product_query}",
             "nykaa_fashion": f"https://www.nykaafashion.com/search/result?q={product_query}"
             }
         
