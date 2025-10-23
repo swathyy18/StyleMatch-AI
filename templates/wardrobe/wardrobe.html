@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Wardrobe - StyleMatch</title>
+    <style>
+        .wardrobe-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .wardrobe-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            min-height: 200px;
+        }
+        .wardrobe-item {
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+            background: white;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .wardrobe-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .delete-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+            display: none;
+            font-weight: bold;
+        }
+        .delete-mode .delete-btn {
+            display: block;
+        }
+        .delete-mode .wardrobe-item {
+            border-color: #dc3545;
+        }
+        .action-buttons {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .delete-mode-btn {
+            background: #dc3545;
+        }
+        .delete-mode-btn:hover {
+            background: #c82333;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            padding: 20px;
+            margin: 10% auto;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .modal-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .modal-tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #666;
+            font-size: 16px;
+            flex: 1;
+        }
+        .modal-tab.active {
+            color: #007bff;
+            border-bottom: 2px solid #007bff;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .outfit-combinations {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .outfit {
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            padding: 15px;
+            background: #f8fff9;
+        }
+        .outfit-images {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .outfit-images img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 40px;
+        }
+        #uploadStatus {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .file-input-container {
+            margin: 15px 0;
+        }
+        .file-input-label {
+            display: block;
+            padding: 10px 15px;
+            background: #f8f9fa;
+            border: 2px dashed #dee2e6;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .file-input-label:hover {
+            background: #e9ecef;
+        }
+        .file-input {
+            display: none;
+        }
+        .selected-files {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="wardrobe-container">
+        <h1>👗 My Wardrobe</h1>
+        <p>Welcome, {{ user.username }}! Upload your clothing items and get AI-generated outfit combinations.</p>
+        
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button onclick="openEditModal()">📁 Edit Wardrobe</button>
+            <button onclick="generateCombinations()">🎨 Mix & Match</button>
+        </div>
+        
+        <!-- Wardrobe Items Grid -->
+        <h2>Your Clothing Items</h2>
+        <div class="wardrobe-grid" id="wardrobeItems">
+            <div class="empty-state" id="emptyState">
+                <p>No items in your wardrobe yet.</p>
+                <p>Click "Edit Wardrobe" to add some clothing!</p>
+            </div>
+        </div>
+        
+        <!-- Outfit Combinations Results -->
+        <div id="combinationsSection" style="display: none;">
+            <h2>🎯 Generated Outfits</h2>
+            <div class="outfit-combinations" id="combinationsResults">
+                <!-- Generated outfits will appear here -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Wardrobe Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <h3>📁 Edit Your Wardrobe</h3>
+            
+            <!-- Tab Navigation -->
+            <div class="modal-tabs">
+                <button class="modal-tab active" onclick="switchTab('uploadTab')">⬆️ Upload Items</button>
+                <button class="modal-tab" onclick="switchTab('deleteTab')">🗑️ Delete Items</button>
+            </div>
+            
+            <!-- Upload Tab -->
+            <div id="uploadTab" class="tab-content active">
+                <p>Select multiple clothing images to upload:</p>
+                
+                <div class="file-input-container">
+                    <label for="fileInput" class="file-input-label">
+                        📁 Click to select files or drag & drop here
+                    </label>
+                    <input type="file" id="fileInput" class="file-input" multiple accept="image/*" onchange="updateSelectedFiles()">
+                    <div class="selected-files" id="selectedFiles">No files selected</div>
+                </div>
+                
+                <div class="action-buttons">
+                    <button onclick="uploadImages()">🚀 Upload Selected Images</button>
+                    <button onclick="closeEditModal()" style="background: #6c757d;">Close</button>
+                </div>
+                <div id="uploadStatus"></div>
+            </div>
+            
+            <!-- Delete Tab -->
+            <div id="deleteTab" class="tab-content">
+                <p>Click the X buttons to delete items from your wardrobe:</p>
+                <div class="action-buttons">
+                    <button onclick="enableDeleteMode()" class="delete-mode-btn">🔴 Enable Delete Mode</button>
+                    <button onclick="closeEditModal()" style="background: #6c757d;">Close</button>
+                </div>
+                <div id="deleteStatus"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let deleteMode = false;
+        
+        // Load wardrobe items on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Wardrobe page loaded');
+            loadWardrobeItems();
+            
+            // Add drag and drop functionality
+            const fileInput = document.getElementById('fileInput');
+            const fileInputLabel = document.querySelector('.file-input-label');
+            
+            fileInputLabel.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                fileInputLabel.style.background = '#e9ecef';
+                fileInputLabel.style.borderColor = '#007bff';
+            });
+            
+            fileInputLabel.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                fileInputLabel.style.background = '#f8f9fa';
+                fileInputLabel.style.borderColor = '#dee2e6';
+            });
+            
+            fileInputLabel.addEventListener('drop', function(e) {
+                e.preventDefault();
+                fileInputLabel.style.background = '#f8f9fa';
+                fileInputLabel.style.borderColor = '#dee2e6';
+                
+                if (e.dataTransfer.files.length) {
+                    fileInput.files = e.dataTransfer.files;
+                    updateSelectedFiles();
+                }
+            });
+        });
+        
+        // Modal functions
+        function openEditModal() {
+            document.getElementById('editModal').style.display = 'block';
+            switchTab('uploadTab'); // Default to upload tab
+        }
+        
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+            document.getElementById('uploadStatus').innerHTML = '';
+            document.getElementById('deleteStatus').innerHTML = '';
+            disableDeleteMode(); // Ensure delete mode is disabled when closing modal
+        }
+        
+        // Tab switching
+        function switchTab(tabId) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tab buttons
+            document.querySelectorAll('.modal-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabId).classList.add('active');
+            
+            // Add active class to clicked tab button
+            event.target.classList.add('active');
+            
+            // If switching to delete tab, reload items with delete buttons
+            if (tabId === 'deleteTab') {
+                loadWardrobeItemsForDelete();
+            }
+        }
+        
+        // Update selected files display
+        function updateSelectedFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const selectedFilesDiv = document.getElementById('selectedFiles');
+            
+            if (fileInput.files.length > 0) {
+                let fileNames = [];
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    fileNames.push(fileInput.files[i].name);
+                }
+                selectedFilesDiv.textContent = `Selected: ${fileNames.join(', ')}`;
+            } else {
+                selectedFilesDiv.textContent = 'No files selected';
+            }
+        }
+        
+        // Load wardrobe items from API
+        async function loadWardrobeItems() {
+            try {
+                console.log('📥 Loading wardrobe items...');
+                const response = await fetch('/wardrobe/api/items/');
+                const data = await response.json();
+                
+                const grid = document.getElementById('wardrobeItems');
+                const emptyState = document.getElementById('emptyState');
+                
+                if (data.items && data.items.length > 0) {
+                    emptyState.style.display = 'none';
+                    grid.innerHTML = '';
+                    
+                    data.items.forEach(item => {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'wardrobe-item';
+                        itemDiv.innerHTML = `
+                            <img src="${item.image_url}" alt="${item.description}" onerror="this.src='https://via.placeholder.com/150?text=Image+Error'">
+                            <p><strong>${item.description}</strong></p>
+                            <p>📁 ${item.category}</p>
+                            <small>Added: ${item.created_at}</small>
+                        `;
+                        grid.appendChild(itemDiv);
+                    });
+                } else {
+                    emptyState.style.display = 'block';
+                    grid.innerHTML = '';
+                    grid.appendChild(emptyState);
+                }
+            } catch (error) {
+                console.error('❌ Error loading wardrobe:', error);
+                document.getElementById('wardrobeItems').innerHTML = 
+                    '<div class="empty-state"><p>Error loading wardrobe items</p></div>';
+            }
+        }
+        
+        // Load wardrobe items for delete mode
+        async function loadWardrobeItemsForDelete() {
+            try {
+                console.log('📥 Loading wardrobe items for delete mode...');
+                const response = await fetch('/wardrobe/api/items/');
+                const data = await response.json();
+                
+                const deleteTab = document.getElementById('deleteTab');
+                
+                if (data.items && data.items.length > 0) {
+                    let itemsHTML = '<div class="wardrobe-grid">';
+                    
+                    data.items.forEach(item => {
+                        itemsHTML += `
+                            <div class="wardrobe-item">
+                                <button class="delete-btn" onclick="deleteItem(${item.id})">×</button>
+                                <img src="${item.image_url}" alt="${item.description}" onerror="this.src='https://via.placeholder.com/150?text=Image+Error'">
+                                <p><strong>${item.description}</strong></p>
+                                <p>📁 ${item.category}</p>
+                                <small>Added: ${item.created_at}</small>
+                            </div>
+                        `;
+                    });
+                    
+                    itemsHTML += '</div>';
+                    deleteTab.innerHTML = deleteTab.innerHTML.split('<div class="wardrobe-grid">')[0] + itemsHTML;
+                } else {
+                    deleteTab.innerHTML = deleteTab.innerHTML.split('<div class="wardrobe-grid">')[0] + 
+                        '<div class="empty-state"><p>No items to delete</p></div>';
+                }
+            } catch (error) {
+                console.error('❌ Error loading wardrobe for delete:', error);
+                document.getElementById('deleteTab').innerHTML = 
+                    '<div class="empty-state"><p>Error loading wardrobe items</p></div>';
+            }
+        }
+        
+        // Enable delete mode
+        function enableDeleteMode() {
+            const deleteTab = document.getElementById('deleteTab');
+            deleteTab.classList.add('delete-mode');
+            showDeleteStatus('🔄 Delete mode enabled - click X buttons to delete items', 'info');
+        }
+        
+        // Disable delete mode
+        function disableDeleteMode() {
+            const deleteTab = document.getElementById('deleteTab');
+            deleteTab.classList.remove('delete-mode');
+            showDeleteStatus('', 'info');
+        }
+        
+        // Delete item
+        async function deleteItem(itemId) {
+            if (!confirm('Are you sure you want to delete this item?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/wardrobe/api/delete-item/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    },
+                    body: JSON.stringify({ item_id: itemId })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showDeleteStatus('✅ Item deleted successfully', 'success');
+                    // Reload both the main view and delete view
+                    loadWardrobeItems();
+                    setTimeout(loadWardrobeItemsForDelete, 500);
+                } else {
+                    showDeleteStatus(`❌ Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('❌ Error deleting item:', error);
+                showDeleteStatus('❌ Failed to delete item', 'error');
+            }
+        }
+        
+        // Upload images
+        async function uploadImages() {
+            const fileInput = document.getElementById('fileInput');
+            const files = fileInput.files;
+            
+            if (files.length === 0) {
+                showUploadStatus('⚠️ Please select images to upload', 'warning');
+                return;
+            }
+            
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('images', files[i]);
+            }
+            
+            showUploadStatus('🔄 Uploading and processing images...', 'info');
+            
+            try {
+                const response = await fetch('/wardrobe/api/upload/', {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': getCSRFToken()
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showUploadStatus(`✅ Successfully uploaded ${result.uploaded_count} items!`, 'success');
+                    loadWardrobeItems(); // Reload the main grid
+                    fileInput.value = ''; // Clear file input
+                    document.getElementById('selectedFiles').textContent = 'No files selected';
+                    
+                    // Auto-close modal after 2 seconds
+                    setTimeout(() => {
+                        closeEditModal();
+                    }, 2000);
+                } else {
+                    showUploadStatus(`❌ Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('❌ Upload error:', error);
+                showUploadStatus('❌ Upload failed - check console', 'error');
+            }
+        }
+        
+        // Generate outfit combinations
+        async function generateCombinations() {
+            try {
+                showUploadStatus('🔮 Generating outfit combinations...', 'info');
+                
+                const response = await fetch('/wardrobe/api/generate-outfits/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showUploadStatus('✅ Outfits generated successfully!', 'success');
+                    displayOutfits(result.outfits);
+                } else {
+                    showUploadStatus(`❌ Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('❌ Error generating outfits:', error);
+                showUploadStatus('❌ Failed to generate outfits', 'error');
+            }
+        }
+        
+        // Display generated outfits
+        function displayOutfits(outfits) {
+            const resultsDiv = document.getElementById('combinationsResults');
+            const section = document.getElementById('combinationsSection');
+            
+            section.style.display = 'block';
+            resultsDiv.innerHTML = '';
+            
+            if (!outfits || outfits.length === 0) {
+                resultsDiv.innerHTML = `
+                    <div class="empty-state">
+                        <p>No outfits generated. Try adding more items to your wardrobe.</p>
+                        <p>You need at least 2 items for good combinations.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            outfits.forEach((outfit, index) => {
+                const outfitDiv = document.createElement('div');
+                outfitDiv.className = 'outfit';
+                
+                let imagesHtml = '';
+                outfit.items.forEach(item => {
+                    imagesHtml += `
+                        <div style="text-align: center;">
+                            <img src="${item.image}" alt="${item.description}" onerror="this.src='https://via.placeholder.com/80?text=Error'">
+                            <div style="font-size: 12px; margin-top: 5px;">${item.description}</div>
+                        </div>
+                    `;
+                });
+                
+                outfitDiv.innerHTML = `
+                    <h3>Outfit #${index + 1}</h3>
+                    <div class="outfit-images">${imagesHtml}</div>
+                    <p><strong>Description:</strong> ${outfit.description}</p>
+                    <p><strong>Score:</strong> ${outfit.score}/10 ⭐</p>
+                    <p><strong>AI Feedback:</strong> ${outfit.ai_feedback}</p>
+                `;
+                
+                resultsDiv.appendChild(outfitDiv);
+            });
+        }
+        
+        // Helper functions
+        function showUploadStatus(message, type) {
+            const statusDiv = document.getElementById('uploadStatus');
+            const colors = {
+                'success': '#d4edda',
+                'error': '#f8d7da', 
+                'warning': '#fff3cd',
+                'info': '#d1ecf1'
+            };
+            statusDiv.innerHTML = message ? `<div style="padding: 10px; background: ${colors[type]}; border-radius: 5px;">${message}</div>` : '';
+        }
+        
+        function showDeleteStatus(message, type) {
+            const statusDiv = document.getElementById('deleteStatus');
+            const colors = {
+                'success': '#d4edda',
+                'error': '#f8d7da', 
+                'warning': '#fff3cd',
+                'info': '#d1ecf1'
+            };
+            statusDiv.innerHTML = message ? `<div style="padding: 10px; background: ${colors[type]}; border-radius: 5px;">${message}</div>` : '';
+        }
+        
+        function getCSRFToken() {
+            // Try multiple ways to get CSRF token
+            let csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (csrfToken) return csrfToken.value;
+            
+            csrfToken = document.cookie.match(/csrftoken=([^;]+)/);
+            if (csrfToken) return csrfToken[1];
+            
+            console.error('CSRF token not found');
+            return '';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target === modal) {
+                closeEditModal();
+            }
+        }
+    </script>
+</body>
+</html>

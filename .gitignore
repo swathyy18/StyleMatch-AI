@@ -34,3 +34,20 @@ media/
 # Databases
 *.sqlite3
 *.db
+
+# CLIP model cache (if downloaded locally)
+.clip_cache/
+.clip/
+*.pt
+*.pth
+
+# Temporary files
+*.tmp
+*.temp
+
+# PyTest cache
+.pytest_cache/
+
+# Large embeddings or dataset files
+embeddings/
+datasets/
