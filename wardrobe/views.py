@@ -308,7 +308,11 @@ class GenerateOutfitsView(APIView):
     def post(self, request):
         try:
             user_items = WardrobeItem.objects.filter(user=request.user)
+            selected_item_id = request.data.get('selected_item_id')
+            
             print(f"🎯 Generating outfits for {user_items.count()} items")
+            if selected_item_id:
+                print(f"🎯 Using selected item: {selected_item_id}")
             
             if user_items.count() < 2:
                 return Response({"error": "Need at least 2 items to generate outfits"}, status=400)
@@ -318,12 +322,17 @@ class GenerateOutfitsView(APIView):
                 color = self.extract_color_from_description(item.description)
                 print(f"🎯 Item: {item.description} → Category: {item.category} → Color: {color}")
             
-            outfits = self.generate_combinations(user_items)
+            outfits = self.generate_combinations(user_items, selected_item_id)
             print(f"🎯 Generated {len(outfits)} outfit combinations")
             
             if not outfits:
+                if selected_item_id:
+                    error_msg = f"Could not generate outfits with the selected item. Try adding more compatible clothing items."
+                else:
+                    error_msg = "Could not generate complete outfits. Try adding more diverse clothing items."
+                
                 return Response({
-                    "error": "Could not generate complete outfits. Try adding more diverse clothing items.",
+                    "error": error_msg,
                     "debug_info": {
                         "total_items": user_items.count(),
                         "categories": {
@@ -348,7 +357,7 @@ class GenerateOutfitsView(APIView):
             traceback.print_exc()
             return Response({"error": f"Internal server error: {str(e)}"}, status=500)
     
-    def generate_combinations(self, items):
+    def generate_combinations(self, items, selected_item_id=None):
         """Generate valid outfit combinations with extensive color theory"""
         # Categorize items
         western_tops = [item for item in items if item.category == 'top']
@@ -364,6 +373,262 @@ class GenerateOutfitsView(APIView):
         print(f"🎯 Categorized: {len(western_tops)} western_tops, {len(western_bottoms)} western_bottoms, {len(western_dresses)} western_dresses")
         print(f"🎯 Indian wear: {len(kurtis)} kurtis, {len(sarees)} sarees, {len(indian_bottoms)} indian_bottoms, {len(dupattas)} dupattas")
         
+        # If selected_item_id is provided, find the selected item
+        selected_item = None
+        if selected_item_id:
+            try:
+                selected_item = WardrobeItem.objects.get(id=selected_item_id, user=items[0].user)
+                print(f"🎯 Selected item: {selected_item.description} ({selected_item.category})")
+            except WardrobeItem.DoesNotExist:
+                print(f"❌ Selected item {selected_item_id} not found")
+        
+        combinations = []
+        
+        # If we have a selected item, only generate combinations with that item
+        if selected_item:
+            combinations = self.generate_combinations_with_selected_item(
+                selected_item, 
+                western_tops, western_bottoms, western_dresses,
+                kurtis, sarees, indian_bottoms, dupattas, shoes, accessories
+            )
+        else:
+            # Original logic for all combinations
+            combinations = self.generate_all_combinations(
+                western_tops, western_bottoms, western_dresses,
+                kurtis, sarees, indian_bottoms, dupattas, shoes, accessories
+            )
+        
+        # Remove duplicates and return
+        unique_combinations = []
+        seen_combinations = set()
+        
+        for combo in combinations:
+            combo_key = tuple(sorted(item['id'] for item in combo['items']))
+            if combo_key not in seen_combinations:
+                seen_combinations.add(combo_key)
+                unique_combinations.append(combo)
+        
+        return unique_combinations[:10]
+
+    def generate_combinations_with_selected_item(self, selected_item, western_tops, western_bottoms, western_dresses, kurtis, sarees, indian_bottoms, dupattas, shoes, accessories):
+        """Generate combinations only including the selected item"""
+        combinations = []
+        selected_color = self.extract_color_from_description(selected_item.description)
+        
+        print(f"🎯 Generating combinations with selected item: {selected_item.description} (Category: {selected_item.category})")
+        
+        # Handle based on selected item category
+        if selected_item.category == 'top':
+            # Western top - pair with bottoms and shoes
+            highly_matching_bottoms = self.get_highly_matching_bottoms(selected_color, western_bottoms)
+            for bottom in highly_matching_bottoms[:3]:
+                bottom_color = self.extract_color_from_description(bottom.description)
+                highly_matching_shoes = self.get_highly_matching_shoes_for_outfit(selected_color, bottom_color, shoes)
+                
+                combo_items = [
+                    {
+                        'id': selected_item.id,
+                        'description': selected_item.description,
+                        'category': selected_item.category,
+                        'image': selected_item.image.url
+                    },
+                    {
+                        'id': bottom.id,
+                        'description': bottom.description,
+                        'category': bottom.category,
+                        'image': bottom.image.url
+                    }
+                ]
+                
+                if highly_matching_shoes:
+                    shoe = highly_matching_shoes[0]
+                    combo_items.append({
+                        'id': shoe.id,
+                        'description': shoe.description,
+                        'category': shoe.category,
+                        'image': shoe.image.url
+                    })
+                
+                combo = {
+                    'type': 'selected_top_outfit',
+                    'items': combo_items,
+                    'description': f"{selected_item.description} with {bottom.description}" + (f" and {shoe.description}" if highly_matching_shoes else "")
+                }
+                combinations.append(combo)
+                
+        elif selected_item.category == 'kurti':
+            # Kurti - pair with pants (no skirts) and dupatta
+            highly_matching_pants = self.get_highly_matching_indian_bottoms(selected_color, indian_bottoms)
+            if not highly_matching_pants:
+                western_pants_only = [b for b in western_bottoms if 'skirt' not in b.description.lower()]
+                highly_matching_pants = self.get_highly_matching_bottoms(selected_color, western_pants_only)
+            
+            for pants in highly_matching_pants[:3]:
+                highly_matching_dupattas = self.get_highly_matching_dupattas(selected_color, dupattas)
+                
+                combo_items = [
+                    {
+                        'id': selected_item.id,
+                        'description': selected_item.description,
+                        'category': selected_item.category,
+                        'image': selected_item.image.url
+                    },
+                    {
+                        'id': pants.id,
+                        'description': pants.description,
+                        'category': pants.category,
+                        'image': pants.image.url
+                    }
+                ]
+                
+                if highly_matching_dupattas:
+                    dupatta = highly_matching_dupattas[0]
+                    combo_items.append({
+                        'id': dupatta.id,
+                        'description': dupatta.description,
+                        'category': dupatta.category,
+                        'image': dupatta.image.url
+                    })
+                
+                # Add Indian footwear
+                indian_shoes = [s for s in shoes if self.is_indian_footwear(s.description)]
+                highly_matching_indian_shoes = self.get_highly_matching_shoes(selected_color, indian_shoes)
+                
+                if highly_matching_indian_shoes:
+                    shoe = highly_matching_indian_shoes[0]
+                    combo_items.append({
+                        'id': shoe.id,
+                        'description': shoe.description,
+                        'category': shoe.category,
+                        'image': shoe.image.url
+                    })
+                
+                combo = {
+                    'type': 'selected_kurti_outfit',
+                    'items': combo_items,
+                    'description': f"{selected_item.description} with {pants.description}" + (f" and {dupatta.description}" if highly_matching_dupattas else "")
+                }
+                combinations.append(combo)
+                
+        elif selected_item.category == 'dress':
+            # Dress - pair with shoes
+            highly_matching_shoes = self.get_highly_matching_shoes(selected_color, shoes)
+            for shoe in highly_matching_shoes[:3]:
+                combo = {
+                    'type': 'selected_dress_outfit',
+                    'items': [
+                        {
+                            'id': selected_item.id,
+                            'description': selected_item.description,
+                            'category': selected_item.category,
+                            'image': selected_item.image.url
+                        },
+                        {
+                            'id': shoe.id,
+                            'description': shoe.description,
+                            'category': shoe.category,
+                            'image': shoe.image.url
+                        }
+                    ],
+                    'description': f"{selected_item.description} with {shoe.description}"
+                }
+                combinations.append(combo)
+                
+        elif selected_item.category == 'bottom' or selected_item.category == 'indian_bottom':
+            # Bottom - pair with tops
+            # Check if the selected bottom is a skirt
+            is_skirt = any(skirt_word in selected_item.description.lower() for skirt_word in ['skirt', 'ghagra', 'lehenga'])
+            if is_skirt:
+            # Skirt - only pair with Western tops (not kurtis)
+                highly_matching_tops = self.get_highly_matching_bottoms(selected_color, western_tops)
+            else:
+                highly_matching_tops = self.get_highly_matching_bottoms(selected_color, western_tops + kurtis)
+            
+            for top in highly_matching_tops[:3]:
+                combo = {
+                    'type': 'selected_bottom_outfit',
+                    'items': [
+                        {
+                            'id': top.id,
+                            'description': top.description,
+                            'category': top.category,
+                            'image': top.image.url
+                        },
+                        {
+                            'id': selected_item.id,
+                            'description': selected_item.description,
+                            'category': selected_item.category,
+                            'image': selected_item.image.url
+                        }
+                    ],
+                    'description': f"{top.description} with {selected_item.description}"
+                }
+                combinations.append(combo)
+                
+        elif selected_item.category == 'shoes':
+            # Shoes - pair with dresses or top+bottom combinations
+            # Try with dresses first
+            for dress in western_dresses[:2]:
+                dress_color = self.extract_color_from_description(dress.description)
+                if self.are_colors_highly_compatible(dress_color, selected_color):
+                    combo = {
+                        'type': 'selected_shoes_outfit',
+                        'items': [
+                            {
+                                'id': dress.id,
+                                'description': dress.description,
+                                'category': dress.category,
+                                'image': dress.image.url
+                            },
+                            {
+                                'id': selected_item.id,
+                                'description': selected_item.description,
+                                'category': selected_item.category,
+                                'image': selected_item.image.url
+                            }
+                        ],
+                        'description': f"{dress.description} with {selected_item.description}"
+                    }
+                    combinations.append(combo)
+            
+            # Try with top+bottom combinations
+            for top in western_tops[:2]:
+                for bottom in western_bottoms[:2]:
+                    top_color = self.extract_color_from_description(top.description)
+                    bottom_color = self.extract_color_from_description(bottom.description)
+                    if (self.are_colors_highly_compatible(top_color, selected_color) or 
+                        self.are_colors_highly_compatible(bottom_color, selected_color)):
+                        combo = {
+                            'type': 'selected_shoes_outfit',
+                            'items': [
+                                {
+                                    'id': top.id,
+                                    'description': top.description,
+                                    'category': top.category,
+                                    'image': top.image.url
+                                },
+                                {
+                                    'id': bottom.id,
+                                    'description': bottom.description,
+                                    'category': bottom.category,
+                                    'image': bottom.image.url
+                                },
+                                {
+                                    'id': selected_item.id,
+                                    'description': selected_item.description,
+                                    'category': selected_item.category,
+                                    'image': selected_item.image.url
+                                }
+                            ],
+                            'description': f"{top.description} with {bottom.description} and {selected_item.description}"
+                        }
+                        combinations.append(combo)
+                        break
+        
+        return combinations
+
+    def generate_all_combinations(self, western_tops, western_bottoms, western_dresses, kurtis, sarees, indian_bottoms, dupattas, shoes, accessories):
+        """Original logic for generating all combinations"""
         combinations = []
         
         # Strategy 1: Western Dress outfits with color-coordinated shoes
@@ -563,17 +828,7 @@ class GenerateOutfitsView(APIView):
                 }
                 combinations.append(combo)
         
-        # Remove duplicates and return
-        unique_combinations = []
-        seen_combinations = set()
-        
-        for combo in combinations:
-            combo_key = tuple(sorted(item['id'] for item in combo['items']))
-            if combo_key not in seen_combinations:
-                seen_combinations.add(combo_key)
-                unique_combinations.append(combo)
-        
-        return unique_combinations[:10]
+        return combinations
 
     def extract_color_from_description(self, description):
         """Extract color from description"""

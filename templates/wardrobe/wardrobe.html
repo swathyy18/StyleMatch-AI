@@ -27,6 +27,16 @@
             background: white;
             position: relative;
             transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .wardrobe-item:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+        }
+        .wardrobe-item.selected {
+            border-color: #28a745;
+            background: #f8fff9;
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
         }
         .wardrobe-item img {
             width: 100%;
@@ -54,10 +64,17 @@
         .delete-mode .wardrobe-item {
             border-color: #dc3545;
         }
+        .selection-mode .wardrobe-item {
+            cursor: pointer;
+        }
+        .selection-mode .wardrobe-item:hover {
+            border-color: #28a745;
+        }
         .action-buttons {
             margin: 20px 0;
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
         }
         button {
             padding: 10px 20px;
@@ -76,6 +93,16 @@
         }
         .delete-mode-btn:hover {
             background: #c82333;
+        }
+        .pick-match-btn {
+            background: #28a745;
+        }
+        .pick-match-btn:hover {
+            background: #218838;
+        }
+        .pick-match-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
         }
         .modal {
             display: none;
@@ -180,6 +207,16 @@
             font-size: 14px;
             color: #666;
         }
+        .selection-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+        }
+        .selection-info.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -190,7 +227,15 @@
         <!-- Action Buttons -->
         <div class="action-buttons">
             <button onclick="openEditModal()">📁 Edit Wardrobe</button>
-            <button onclick="generateCombinations()">🎨 Mix & Match</button>
+            <button onclick="generateCombinations()">🎨 Mix & Match All</button>
+            <button class="pick-match-btn" onclick="startPickAndMatch()" id="pickMatchBtn">✨ Pick & Match</button>
+            <button onclick="cancelSelection()" style="background: #6c757d; display: none;" id="cancelSelectionBtn">Cancel Selection</button>
+        </div>
+
+        <!-- Selection Info -->
+        <div class="selection-info hidden" id="selectionInfo">
+            <strong>✨ Pick & Match Mode:</strong> Click on any item to generate outfits with it. Click "Generate Outfits" when ready.
+            <button onclick="generateCombinationsWithSelected()" style="background: #28a745; margin-left: 10px;">Generate Outfits</button>
         </div>
         
         <!-- Wardrobe Items Grid -->
@@ -255,6 +300,8 @@
 
     <script>
         let deleteMode = false;
+        let selectionMode = false;
+        let selectedItemId = null;
         
         // Load wardrobe items on page load
         document.addEventListener('DOMContentLoaded', function() {
@@ -288,6 +335,73 @@
                 }
             });
         });
+        
+        // Pick & Match functionality
+        function startPickAndMatch() {
+            selectionMode = true;
+            selectedItemId = null;
+            
+            const grid = document.getElementById('wardrobeItems');
+            const pickMatchBtn = document.getElementById('pickMatchBtn');
+            const cancelBtn = document.getElementById('cancelSelectionBtn');
+            const selectionInfo = document.getElementById('selectionInfo');
+            
+            grid.classList.add('selection-mode');
+            pickMatchBtn.disabled = true;
+            cancelBtn.style.display = 'inline-block';
+            selectionInfo.classList.remove('hidden');
+            
+            showUploadStatus('✨ Click on any item to generate outfits with it', 'info');
+        }
+        
+        function cancelSelection() {
+            selectionMode = false;
+            selectedItemId = null;
+            
+            const grid = document.getElementById('wardrobeItems');
+            const pickMatchBtn = document.getElementById('pickMatchBtn');
+            const cancelBtn = document.getElementById('cancelSelectionBtn');
+            const selectionInfo = document.getElementById('selectionInfo');
+            const items = document.querySelectorAll('.wardrobe-item');
+            
+            grid.classList.remove('selection-mode');
+            pickMatchBtn.disabled = false;
+            cancelBtn.style.display = 'none';
+            selectionInfo.classList.add('hidden');
+            
+            // Remove selection highlights
+            items.forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            showUploadStatus('', 'info');
+        }
+        
+        function selectItem(itemId) {
+            if (!selectionMode) return;
+            
+            const items = document.querySelectorAll('.wardrobe-item');
+            items.forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            const selectedItem = document.querySelector(`.wardrobe-item[data-item-id="${itemId}"]`);
+            if (selectedItem) {
+                selectedItem.classList.add('selected');
+                selectedItemId = itemId;
+                
+                const itemDescription = selectedItem.querySelector('p strong').textContent;
+                showUploadStatus(`✅ Selected: ${itemDescription}. Click "Generate Outfits" to continue.`, 'success');
+            }
+        }
+        
+        function generateCombinationsWithSelected() {
+            if (!selectedItemId) {
+                showUploadStatus('⚠️ Please select an item first', 'warning');
+                return;
+            }
+            generateCombinations(selectedItemId);
+        }
         
         // Modal functions
         function openEditModal() {
@@ -359,6 +473,8 @@
                     data.items.forEach(item => {
                         const itemDiv = document.createElement('div');
                         itemDiv.className = 'wardrobe-item';
+                        itemDiv.setAttribute('data-item-id', item.id);
+                        itemDiv.onclick = () => selectItem(item.id);
                         itemDiv.innerHTML = `
                             <img src="${item.image_url}" alt="${item.description}" onerror="this.src='https://via.placeholder.com/150?text=Image+Error'">
                             <p><strong>${item.description}</strong></p>
@@ -510,23 +626,41 @@
         }
         
         // Generate outfit combinations
-        async function generateCombinations() {
+        async function generateCombinations(selectedItemId = null) {
             try {
-                showUploadStatus('🔮 Generating outfit combinations...', 'info');
+                if (selectedItemId) {
+                    showUploadStatus(`🔮 Generating outfits with selected item...`, 'info');
+                } else {
+                    showUploadStatus('🔮 Generating outfit combinations...', 'info');
+                }
+                
+                const requestData = {};
+                if (selectedItemId) {
+                    requestData.selected_item_id = selectedItemId;
+                }
                 
                 const response = await fetch('/wardrobe/api/generate-outfits/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': getCSRFToken()
-                    }
+                    },
+                    body: JSON.stringify(requestData)
                 });
                 
                 const result = await response.json();
                 
                 if (response.ok) {
-                    showUploadStatus('✅ Outfits generated successfully!', 'success');
+                    if (selectedItemId) {
+                        showUploadStatus('✅ Outfits with selected item generated successfully!', 'success');
+                    } else {
+                        showUploadStatus('✅ Outfits generated successfully!', 'success');
+                    }
                     displayOutfits(result.outfits);
+                    // Exit selection mode after generation
+                    if (selectionMode) {
+                        cancelSelection();
+                    }
                 } else {
                     showUploadStatus(`❌ Error: ${result.error}`, 'error');
                 }
@@ -572,8 +706,6 @@
                     <h3>Outfit #${index + 1}</h3>
                     <div class="outfit-images">${imagesHtml}</div>
                     <p><strong>Description:</strong> ${outfit.description}</p>
-                    <p><strong>Score:</strong> ${outfit.score}/10 ⭐</p>
-                    <p><strong>AI Feedback:</strong> ${outfit.ai_feedback}</p>
                 `;
                 
                 resultsDiv.appendChild(outfitDiv);
