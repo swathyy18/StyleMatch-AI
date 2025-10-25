@@ -15,6 +15,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import time
 import re
+import requests
 
 @method_decorator(login_required, name='dispatch')
 class WardrobeUploadView(APIView):
@@ -358,7 +359,7 @@ class GenerateOutfitsView(APIView):
             return Response({"error": f"Internal server error: {str(e)}"}, status=500)
     
     def generate_combinations(self, items, selected_item_id=None):
-        """Generate valid outfit combinations with extensive color theory"""
+        """Generate valid outfit combinations with ColorMind API color theory"""
         # Categorize items
         western_tops = [item for item in items if item.category == 'top']
         western_bottoms = [item for item in items if item.category == 'bottom']
@@ -535,13 +536,14 @@ class GenerateOutfitsView(APIView):
                 combinations.append(combo)
                 
         elif selected_item.category == 'bottom' or selected_item.category == 'indian_bottom':
-            # Bottom - pair with tops
             # Check if the selected bottom is a skirt
             is_skirt = any(skirt_word in selected_item.description.lower() for skirt_word in ['skirt', 'ghagra', 'lehenga'])
+            
             if is_skirt:
-            # Skirt - only pair with Western tops (not kurtis)
+                # Skirt - only pair with Western tops (not kurtis)
                 highly_matching_tops = self.get_highly_matching_bottoms(selected_color, western_tops)
             else:
+                # Pants - can pair with both Western tops and kurtis
                 highly_matching_tops = self.get_highly_matching_bottoms(selected_color, western_tops + kurtis)
             
             for top in highly_matching_tops[:3]:
@@ -836,8 +838,6 @@ class GenerateOutfitsView(APIView):
         
         # Common colors mapping
         color_keywords = {
-            'black': ['black', 'ebony', 'onyx'],
-            'white': ['white', 'ivory', 'cream', 'off-white'],
             'red': ['red', 'crimson', 'scarlet', 'burgundy', 'maroon'],
             'blue': ['blue', 'navy', 'denim', 'sky blue', 'royal blue', 'light blue'],
             'green': ['green', 'emerald', 'olive', 'forest', 'mint'],
@@ -846,6 +846,8 @@ class GenerateOutfitsView(APIView):
             'purple': ['purple', 'violet', 'lavender', 'lilac'],
             'orange': ['orange', 'coral', 'peach'],
             'brown': ['brown', 'tan', 'beige', 'khaki', 'taupe'],
+            'black': ['black', 'ebony', 'onyx'],
+            'white': ['white', 'ivory', 'cream', 'off-white'],
             'gray': ['gray', 'grey', 'charcoal', 'silver'],
             'multicolor': ['floral', 'print', 'pattern', 'striped', 'checkered', 'polka dot']
         }
@@ -856,18 +858,88 @@ class GenerateOutfitsView(APIView):
         
         return 'unknown'
 
+    def color_name_to_rgb(self, color_name):
+        """Convert color name to RGB values"""
+        color_map = {
+            'red': [228, 59, 68],
+            'blue': [66, 133, 244],
+            'green': [52, 168, 83],
+            'yellow': [251, 188, 5],
+            'pink': [234, 128, 252],
+            'purple': [156, 39, 176],
+            'orange': [255, 152, 0],
+            'brown': [121, 85, 72],
+            'black': [0, 0, 0],
+            'white': [255, 255, 255],
+            'gray': [158, 158, 158],
+            'navy': [30, 68, 124],
+            'beige': [245, 245, 220],
+            'khaki': [195, 176, 145]
+        }
+        return color_map.get(color_name, [128, 128, 128])  # Default to gray
+
+    def get_colormind_palette(self, base_color):
+        """Get harmonious color palette from ColorMind API"""
+        base_rgb = self.color_name_to_rgb(base_color)
+        
+        # ColorMind API format
+        data = {
+            "model": "default",
+            "input": [base_rgb, "N", "N", "N", "N"]
+        }
+        
+        try:
+            response = requests.post('http://colormind.io/api/', json=data, timeout=5)
+            if response.status_code == 200:
+                palette = response.json()['result']
+                print(f"🎨 ColorMind palette for {base_color}: {palette}")
+                return palette
+        except Exception as e:
+            print(f"⚠️ ColorMind API error: {e}")
+        
+        return None
+
+    def are_colors_highly_compatible(self, color1, color2):
+        """Check if colors are highly compatible using ColorMind API"""
+        if color1 == 'unknown' or color2 == 'unknown':
+            return False
+        
+        # Get ColorMind palette for the base color
+        palette = self.get_colormind_palette(color1)
+        if palette:
+            color2_rgb = self.color_name_to_rgb(color2)
+            # Check if color2 is in the harmonious palette (with some tolerance)
+            for palette_color in palette:
+                if self.colors_are_similar(color2_rgb, palette_color):
+                    return True
+        
+        # Fallback to basic compatibility for neutral colors
+        neutral_colors = ['black', 'white', 'gray', 'brown', 'beige', 'khaki', 'navy']
+        if color1 in neutral_colors or color2 in neutral_colors:
+            return True
+        
+        return color1 == color2
+
+    def colors_are_similar(self, rgb1, rgb2, tolerance=50):
+        """Check if two RGB colors are similar within tolerance"""
+        r1, g1, b1 = rgb1
+        r2, g2, b2 = rgb2
+        
+        distance = ((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) ** 0.5
+        return distance < tolerance
+
     def get_highly_matching_bottoms(self, top_color, bottoms):
-        """Return only bottoms that HIGHLY match with the top based on extensive color theory"""
+        """Return only bottoms that HIGHLY match with the top using ColorMind"""
         highly_matching = []
         moderately_matching = []
         
         for bottom in bottoms:
             bottom_color = self.extract_color_from_description(bottom.description)
             
-            # Check for high compatibility
+            # Check for high compatibility with ColorMind
             if self.are_colors_highly_compatible(top_color, bottom_color):
                 highly_matching.append(bottom)
-            # Fallback to moderate matches
+            # Fallback to basic matching for neutral colors
             elif self.colors_match(top_color, bottom_color):
                 moderately_matching.append(bottom)
         
@@ -892,8 +964,8 @@ class GenerateOutfitsView(APIView):
             # For Indian wear, check for high compatibility
             if self.are_colors_highly_compatible(kurti_color, bottom_color):
                 highly_matching.append(bottom)
-            # Fallback to traditional Indian color combinations
-            elif self.colors_complement(kurti_color, bottom_color):
+            # Fallback to basic matching
+            elif self.colors_match(kurti_color, bottom_color):
                 moderately_matching.append(bottom)
         
         return highly_matching + moderately_matching[:2]
@@ -906,7 +978,7 @@ class GenerateOutfitsView(APIView):
         for shoe in shoes:
             shoe_color = self.extract_color_from_description(shoe.description)
             
-            # High compatibility
+            # High compatibility with ColorMind
             if self.are_colors_highly_compatible(item_color, shoe_color):
                 highly_matching.append(shoe)
             # Neutral shoes that always work
@@ -961,42 +1033,14 @@ class GenerateOutfitsView(APIView):
         
         return highly_matching[:2]
 
-    def are_colors_highly_compatible(self, color1, color2):
-        """Check if colors are highly compatible based on fashion color theory"""
-        if color1 == 'unknown' or color2 == 'unknown':
-            return False  # Be strict about unknown colors
-        
-        # Perfect matches
-        if color1 == color2:
-            return True
-        
-        # Classic fashion combinations
-        classic_combinations = {
-            'black': ['white', 'red', 'pink', 'yellow', 'gold', 'silver'],
-            'white': ['black', 'navy', 'red', 'green', 'blue', 'pink', 'purple'],
-            'navy': ['white', 'pink', 'red', 'yellow', 'light blue'],
-            'red': ['white', 'black', 'navy', 'gray', 'khaki'],
-            'blue': ['white', 'navy', 'gray', 'pink', 'yellow'],
-            'pink': ['white', 'black', 'gray', 'navy', 'green'],
-            'green': ['white', 'black', 'brown', 'khaki', 'navy'],
-            'yellow': ['white', 'black', 'gray', 'navy', 'purple'],
-            'purple': ['white', 'black', 'gray', 'yellow', 'pink'],
-            'gray': ['white', 'black', 'pink', 'yellow', 'red', 'navy'],
-            'brown': ['white', 'blue', 'green', 'pink', 'cream'],
-            'khaki': ['white', 'navy', 'green', 'red', 'pink']
-        }
-        
-        # Check both directions
-        if color1 in classic_combinations and color2 in classic_combinations[color1]:
-            return True
-        if color2 in classic_combinations and color1 in classic_combinations[color2]:
-            return True
-        
-        return False
-
     def are_colors_beautiful_contrast(self, color1, color2):
         """Check if colors create a beautiful contrast (for Indian wear especially)"""
-        beautiful_contrasts = {
+        # Use ColorMind for contrast checking too
+        if color1 == 'unknown' or color2 == 'unknown':
+            return True
+        
+        # For Indian wear, allow more flexible contrasts
+        indian_contrasts = {
             'red': ['green', 'gold', 'yellow'],
             'green': ['red', 'pink', 'orange', 'purple'],
             'blue': ['orange', 'pink', 'gold'],
@@ -1006,15 +1050,15 @@ class GenerateOutfitsView(APIView):
             'orange': ['blue', 'green', 'purple']
         }
         
-        if color1 in beautiful_contrasts and color2 in beautiful_contrasts[color1]:
+        if color1 in indian_contrasts and color2 in indian_contrasts[color1]:
             return True
-        if color2 in beautiful_contrasts and color1 in beautiful_contrasts[color2]:
+        if color2 in indian_contrasts and color1 in indian_contrasts[color2]:
             return True
         
         return False
 
     def colors_match(self, color1, color2):
-        """Basic color matching (less strict fallback)"""
+        """Basic color matching (fallback when ColorMind fails)"""
         if color1 == 'unknown' or color2 == 'unknown':
             return True
         
@@ -1023,28 +1067,6 @@ class GenerateOutfitsView(APIView):
             return True
         
         return color1 == color2
-
-    def colors_complement(self, color1, color2):
-        """Check if colors complement each other for Indian wear"""
-        if color1 == 'unknown' or color2 == 'unknown':
-            return True
-        
-        indian_color_combinations = {
-            'red': ['green', 'gold', 'yellow', 'pink'],
-            'green': ['red', 'pink', 'orange', 'purple'],
-            'blue': ['orange', 'pink', 'silver', 'yellow'],
-            'pink': ['green', 'blue', 'purple', 'red'],
-            'purple': ['pink', 'yellow', 'gold', 'green'],
-            'yellow': ['purple', 'red', 'blue', 'green'],
-            'orange': ['blue', 'green', 'purple', 'pink']
-        }
-        
-        if color1 in indian_color_combinations and color2 in indian_color_combinations[color1]:
-            return True
-        if color2 in indian_color_combinations and color1 in indian_color_combinations[color2]:
-            return True
-        
-        return False
 
     def is_indian_footwear(self, description):
         """Check if footwear is Indian style"""
