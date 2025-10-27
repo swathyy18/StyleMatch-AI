@@ -1,6 +1,4 @@
 from django.shortcuts import render
-
-# Create your views here.
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import JSONParser, MultiPartParser
@@ -139,21 +137,18 @@ class OutfitRecommendationView(APIView):
                 best_item = item
         return best_item
     
-    # NEW METHOD: Check if user is asking for shopping links
-   # In your views.py, update the is_shopping_request method:
-
     def is_shopping_request(self, user_text):
         """Check if the user is asking for shopping links"""
         if not user_text:
             return False
         
         shopping_keywords = [
-        'buy', 'purchase', 'shop', 'where to buy', 'where can i buy', 'get this',
-        'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'meesho',
-        'link', 'links', 'shopping', 'online', 'website', 'store',
-        'shopping links', 'buy this', 'purchase this', 'shop for',
-        'shopping sites', 'ecommerce', 'online store'
-         ]
+            'buy', 'purchase', 'shop', 'where to buy', 'where can i buy', 'get this',
+            'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'meesho',
+            'link', 'links', 'shopping', 'online', 'website', 'store',
+            'shopping links', 'buy this', 'purchase this', 'shop for',
+            'shopping sites', 'ecommerce', 'online store'
+        ]
     
         user_text_lower = user_text.lower()
     
@@ -164,83 +159,60 @@ class OutfitRecommendationView(APIView):
     
         return False
     
-    # NEW METHOD: Generate shopping links
     def get_shopping_links(self, prompt, image_description=None):
-        """Generate shopping links based on user request"""
+        """Simple shopping links without complex processing"""
         try:
-        # If we have an image description from CLIP, use that directly
+            # SIMPLE: Use image description if available, otherwise clean the text
             if image_description:
-                product_query = image_description.replace(' ', '+')
-                display_name = image_description
+                search_term = image_description
             else:
-            # For text-only requests, use CLIP to understand the query better
-            # This will give us a more accurate product description
-                product_query = self.understand_text_query(prompt)
-                display_name = product_query.replace('+', ' ')
-        
-        # Generate search links for different platforms
+                search_term = self.clean_shopping_text(prompt)
+            
+            # Generate direct search links
+            encoded_term = search_term.replace(' ', '+')
+            
             links = {
-            "amazon": f"https://www.amazon.in/s?k={product_query}",
-            "flipkart": f"https://www.flipkart.com/search?q={product_query}",
-            "myntra": f"https://www.myntra.com/{product_query.replace('+', '-')}",
-            "nykaa_fashion": f"https://www.nykaafashion.com/search/result?q={product_query}"
+                "amazon": f"https://www.amazon.in/s?k={encoded_term}",
+                "flipkart": f"https://www.flipkart.com/search?q={encoded_term}",
             }
-        
-            response = f"🛍️ **Shopping Links for '{display_name}':**\n\n"
-        
+            
+            response = f"🛍️ **Shopping Links for '{search_term}':**\n\n"
             for platform, link in links.items():
-                platform_name = platform.replace('_', ' ').title()
+                platform_name = platform.title()
                 response += f"• **{platform_name}**: {link}\n"
-        
+            
             response += "\n💡 *Click the links to browse available options!*"
-        
+            
             return response
-        
-        except Exception as e:
-            return "I can help you find shopping links! Try asking like: 'Amazon links for white tops' or 'Where to buy blue jeans'"
-
-    def understand_text_query(self, prompt):
-        """Use CLIP to better understand text shopping queries"""
-        try:
-        # Get embedding for the user's text query
-            query_embedding = encode_text(prompt)
-        
-        # Find the closest matching item in database to understand what they mean
-            closest_item = self.find_closest_item(query_embedding)
-        
-            if closest_item:
-            # Use the database item's description for more accurate search
-                return closest_item.description.replace(' ', '+')
-            else:
-            # Fallback to keyword extraction
-                product_info = self.extract_product_info(prompt)
-                return product_info.get('product_type', 'clothing').replace(' ', '+')
             
         except Exception as e:
-        # Fallback if CLIP fails
-            product_info = self.extract_product_info(prompt)
-            return product_info.get('product_type', 'clothing').replace(' ', '+')
-    
-    def extract_product_info(self, prompt):
-        """Extract product details from user request (for text-only shopping)"""
-        # Simple keyword-based extraction for text-only requests
-        colors = ['white', 'black', 'blue', 'red', 'green', 'yellow', 'pink', 'purple', 'orange', 'brown', 'gray']
-        clothing_types = ['top', 'dress', 'jeans', 'shirt', 'skirt', 'shoes', 'saree', 'kurta', 'jacket', 'pants', 'trousers']
+            print(f"❌ Shopping link error: {e}")
+            return "I can help you find shopping links! Try asking like: 'Amazon links for white tops' or 'Where to buy blue jeans'"
+
+    def clean_shopping_text(self, prompt):
+        """Simple text cleaning for shopping queries"""
+        import re
         
         prompt_lower = prompt.lower()
         
-        # Find color and clothing type
-        found_color = next((color for color in colors if color in prompt_lower), '')
-        found_item = next((item for item in clothing_types if item in prompt_lower), 'clothing')
+        # Remove common shopping words
+        remove_words = ['buy', 'purchase', 'shop', 'where to', 'where can i', 'get',
+                       'links for', 'amazon', 'flipkart', 'myntra', 'meesho', 'ajio',
+                       'links', 'shopping', 'please', 'can you', 'could you', 'give me',
+                       'show me', 'i want', 'i need', 'for me']
         
-        product_type = f"{found_color} {found_item}".strip() if found_color else found_item
+        clean = prompt_lower
+        for word in remove_words:
+            clean = clean.replace(word, '')
         
-        return {
-            "product_type": product_type,
-            "color": found_color,
-            "occasion": "casual",  # Default
-            "retailers": ["amazon", "flipkart", "myntra"]
-        }
+        # Remove extra spaces and clean up
+        clean = ' '.join(clean.split()).strip()
+        
+        # If empty after cleaning, use a default
+        if not clean:
+            clean = 'clothing'
+        
+        return clean
     
     def get_llm_recommendation(self, prompt, context_type="text"):
         """Get fashion recommendations with context-aware prompts"""
