@@ -137,81 +137,86 @@ class OutfitRecommendationView(APIView):
                 best_item = item
         return best_item
     
+    #SHOPPING LINKS PART
+
     def is_shopping_request(self, user_text):
         """Check if the user is asking for shopping links"""
         if not user_text:
             return False
-        
+    
         shopping_keywords = [
-            'buy', 'purchase', 'shop', 'where to buy', 'where can i buy', 'get this',
-            'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'meesho',
-            'link', 'links', 'shopping', 'online', 'website', 'store',
-            'shopping links', 'buy this', 'purchase this', 'shop for',
-            'shopping sites', 'ecommerce', 'online store'
+        'buy', 'purchase', 'shop', 'where to buy', 'where can i buy', 'get this',
+        'amazon', 'flipkart', 'myntra', 'ajio', 'nykaa', 'meesho',
+        'link', 'links', 'shopping', 'online', 'website', 'store',
+        'shopping links', 'buy this', 'purchase this', 'shop for',
+        'shopping sites', 'ecommerce', 'online store', 'product links for'
         ]
-    
+
         user_text_lower = user_text.lower()
-    
+
         # Check for exact matches and partial matches
         for keyword in shopping_keywords:
             if keyword in user_text_lower:
                 return True
-    
+
         return False
-    
+
     def get_shopping_links(self, prompt, image_description=None):
-        """Simple shopping links without complex processing"""
+        """Universal shopping links that work for any search term"""
         try:
-            # SIMPLE: Use image description if available, otherwise clean the text
-            if image_description:
-                search_term = image_description
-            else:
-                search_term = self.clean_shopping_text(prompt)
-            
-            # Generate direct search links
+            search_term = image_description if image_description else self.clean_shopping_text(prompt)
             encoded_term = search_term.replace(' ', '+')
-            
-            links = {
-                "amazon": f"https://www.amazon.in/s?k={encoded_term}",
-                "flipkart": f"https://www.flipkart.com/search?q={encoded_term}",
-            }
-            
-            response = f"🛍️ **Shopping Links for '{search_term}':**\n\n"
-            for platform, link in links.items():
-                platform_name = platform.title()
-                response += f"• **{platform_name}**: {link}\n"
-            
-            response += "\n💡 *Click the links to browse available options!*"
-            
+        
+            response = f"🛍️ **Shopping Results for '{search_term}':**\n\n"
+        
+            response += "**🔍 Smart Search Links:**\n\n"
+        
+            # Amazon links with different filters
+            response += "**Amazon:**\n"
+            response += f"• 🏆 **Best Rated**: https://www.amazon.in/s?k={encoded_term}&rh=p_72%3A1318476031&s=review-rank\n"
+            response += f"• 🆕 **Latest Arrivals**: https://www.amazon.in/s?k={encoded_term}&s=date-desc-rank\n\n"
+        
+            # Flipkart links
+            response += "**Flipkart:**\n"
+            response += f"• 🏆 **Popular Choices**: https://www.flipkart.com/search?q={encoded_term}&sort=popularity\n"
+            response += f"• ⭐ **4★+ Rated**: https://www.flipkart.com/search?q={encoded_term}&sort=relevance\n"
+            response += f"• 💵 **Price Low to High**: https://www.flipkart.com/search?q={encoded_term}&sort=price_asc\n\n"
+        
+    
             return response
-            
+        
         except Exception as e:
-            print(f"❌ Shopping link error: {e}")
-            return "I can help you find shopping links! Try asking like: 'Amazon links for white tops' or 'Where to buy blue jeans'"
+            print(f"❌ Shopping links error: {e}")
+            return f"🔍 Search for '{prompt}' on Amazon, Flipkart, or Myntra for great options!"
 
     def clean_shopping_text(self, prompt):
-        """Simple text cleaning for shopping queries"""
-        import re
-        
-        prompt_lower = prompt.lower()
-        
-        # Remove common shopping words
-        remove_words = ['buy', 'purchase', 'shop', 'where to', 'where can i', 'get',
-                       'links for', 'amazon', 'flipkart', 'myntra', 'meesho', 'ajio',
-                       'links', 'shopping', 'please', 'can you', 'could you', 'give me',
-                       'show me', 'i want', 'i need', 'for me']
-        
-        clean = prompt_lower
-        for word in remove_words:
-            clean = clean.replace(word, '')
-        
+        """Clean the search query - keep only the product description"""
+        if not prompt:
+            return "fashion clothing"
+    
+        # Remove shopping-related phrases but keep the core item
+        shopping_phrases = [
+        'buy', 'purchase', 'shop', 'where to', 'where can i', 'get this',
+        'links for', 'amazon', 'flipkart', 'myntra', 'meesho', 'ajio',
+        'links', 'shopping', 'please', 'can you', 'could you', 'give me',
+        'show me', 'i want', 'i need', 'for me', 'recommend', 'suggest',
+        'product links for', 'shopping links for', 'where to find',
+        'looking for', 'need to buy', 'want to purchase','ping'
+        ]
+    
+        clean = prompt.lower()
+    
+        # Remove shopping phrases
+        for phrase in shopping_phrases:
+            clean = clean.replace(phrase, '')
+    
         # Remove extra spaces and clean up
         clean = ' '.join(clean.split()).strip()
-        
+    
         # If empty after cleaning, use a default
         if not clean:
-            clean = 'clothing'
-        
+            clean = 'fashion clothing'
+    
         return clean
     
     def get_llm_recommendation(self, prompt, context_type="text"):
